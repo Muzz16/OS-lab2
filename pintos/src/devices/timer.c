@@ -103,6 +103,14 @@ timer_sleep (int64_t ticks)
   thread_block();
 
   intr_set_level (old_level); // Restore interrupt level
+  if(ticks < 0){
+    thread_current()->wakeup_tick = start;
+  } else {
+    thread_current()->wakeup_tick = start + ticks;
+  }
+  enum intr_level old_level = intr_disable ();
+  thread_block(); // interrupts must be disabled
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -176,9 +184,21 @@ timer_print_stats (void)
 }
 
 /* Timer interrupt handler. */
+
+void unblock_threads(struct thread *t, void* aux){
+
+  if(t->status == THREAD_BLOCKED & t->wakeup_tick > 0){
+    if(timer_ticks() >= t->wakeup_tick - 1)
+      thread_unblock(t);
+  }
+
+}
+
+
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  thread_foreach(&unblock_threads, NULL);
   ticks++;
   thread_tick ();
 }
