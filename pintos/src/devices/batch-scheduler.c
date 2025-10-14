@@ -76,12 +76,32 @@ static void transfer_data (const task_t *task);
 /* Releases the slot */
 static void release_slot (const task_t *task);
 
+int counter;
+direction_t currentDir;
+struct condition waitingToGo[2];
+int waiters[2];
+struct lock busLock;
+
 void init_bus (void) {
 
   random_init ((unsigned int)123456789);
 
   /* TODO: Initialize global/static variables,
      e.g. your condition variables, locks, counters etc */
+
+  /*counter to count how many are on the bus.
+    current direction of the waiters.
+    curretnt priority of the waiters.
+    a lock for the bus, so one thread accesses the shared states.
+    */
+  counter = 0;
+  currentDir = SEND;
+  cond_init(&waitingToGo[0]);
+  cond_init(&waitingToGo[1]);
+  waiters[0] = 0;
+  waiters[1] = 0;
+  lock_init(&busLock);
+
 }
 
 void batch_scheduler (unsigned int num_priority_send,
@@ -188,6 +208,22 @@ void get_slot (const task_t *task) {
    * feel free to schedule priority tasks of the same direction,
    * even if there are priority tasks of the other direction waiting
    */
+
+   /*Lock before.... If the bus is full, then no one can enter. 
+                     If there are tasks on the bus and the current direction is not equal to the tasks direction, then it can not enter either.  
+                     If the task has normal priority and there are tasks waiting with higher priority, then that normal task can not enter either.
+     */
+   lock_acquire(&busLock);
+   while (counter == BUS_CAPACITY || (counter > 0 && currentDir != task->direction)) {
+      waiters[task->direction]++;
+      cond_wait(&waitingToGo[task->direction], &busLock);
+      waiters[task->direction]--;
+   }
+   counter++;
+   currentDir = task->direction;
+   lock_release(&busLock);
+
+
 }
 
 void transfer_data (const task_t *task) {
@@ -201,4 +237,18 @@ void release_slot (const task_t *task) {
    *       - Do you need to notify any waiting task?
    *       - Do you need to increment/decrement any counter?
    */
+
+   /*Lock before... decrement the counter (releasing a slot)
+                    if there are any tasks that want to go same direction, wake them up
+                    otherwise, if there are no one on the bus, and there is someone who wants to go the other direction, wake them up*/
+
+  lock_acquire(&busLock);
+  counter--;
+  if(waiters[task->direction] > 0){
+    cond_signal(&waitingToGo[task->direction], &busLock);
+  }
+  else if(counter == 0){
+    cond_broadcast(&waitingToGo[other_direction(task->direction)], &busLock);
+  }
+  lock_release(&busLock);
 }
