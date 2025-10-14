@@ -79,7 +79,9 @@ static void release_slot (const task_t *task);
 int counter;
 direction_t currentDir;
 struct condition waitingToGo[2];
+struct condition PrioWaitingToGo[2];
 int waiters[2];
+int prioWaiters[2];
 struct lock busLock;
 
 void init_bus (void) {
@@ -98,8 +100,12 @@ void init_bus (void) {
   currentDir = SEND;
   cond_init(&waitingToGo[0]);
   cond_init(&waitingToGo[1]);
+  cond_init(&PrioWaitingToGo[0]);
+  cond_init(&PrioWaitingToGo[1]);
   waiters[0] = 0;
   waiters[1] = 0;
+  prioWaiters[0] = 0;
+  prioWaiters[1] = 0;
   lock_init(&busLock);
 
 }
@@ -214,10 +220,17 @@ void get_slot (const task_t *task) {
                      If the task has normal priority and there are tasks waiting with higher priority, then that normal task can not enter either.
      */
    lock_acquire(&busLock);
-   while (counter == BUS_CAPACITY || (counter > 0 && currentDir != task->direction)) {
-      waiters[task->direction]++;
-      cond_wait(&waitingToGo[task->direction], &busLock);
-      waiters[task->direction]--;
+   //  || ( task->priority != PRIORITY  && (PrioWaiters[0] != 0 || PrioWaiters[1] != 0))
+   while (counter == BUS_CAPACITY || (counter > 0 && currentDir != task->direction) || ( task->priority != PRIORITY  && (prioWaiters[0] != 0 || prioWaiters[1] != 0))) {
+      if(task->priority == NORMAL){
+        waiters[task->direction]++;
+        cond_wait(&waitingToGo[task->direction], &busLock);
+        waiters[task->direction]--;
+      } else {
+        prioWaiters[task->direction]++;
+        cond_wait(&PrioWaitingToGo[task->direction], &busLock);
+        prioWaiters[task->direction]--;
+      }
    }
    counter++;
    currentDir = task->direction;
@@ -244,10 +257,16 @@ void release_slot (const task_t *task) {
 
   lock_acquire(&busLock);
   counter--;
-  if(waiters[task->direction] > 0){
+
+  if(prioWaiters[other_direction(task->direction)] > 0){
+    currentDir = other_direction(task->direction);
+    cond_signal(&PrioWaitingToGo[other_direction(task->direction)], &busLock);
+  } else if((waiters[task->direction] > 0) || prioWaiters[task->direction] > 0){
+    cond_signal(&PrioWaitingToGo[task->direction], &busLock);
     cond_signal(&waitingToGo[task->direction], &busLock);
   }
   else if(counter == 0){
+    cond_broadcast(&PrioWaitingToGo[other_direction(task->direction)], &busLock);
     cond_broadcast(&waitingToGo[other_direction(task->direction)], &busLock);
   }
   lock_release(&busLock);
