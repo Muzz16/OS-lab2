@@ -261,12 +261,16 @@ void release_slot (const task_t *task) {
 
   lock_acquire(&busLock);
   counter--;
-
-  if(prioWaiters[other_direction(task->direction)] > 0) // Prioritize first any Priority tasks that want to go the opposite direction
+  
+  if(prioWaiters[task->direction] > 0) // Prioritize first the priority tasks that are in the same direction as we 
+  {
+    cond_signal(&PrioWaitingToGo[task->direction], &busLock);
+  }
+  else if(prioWaiters[other_direction(task->direction)] > 0) // Prioritize second any Priority tasks that want to go the opposite direction
   {
     currentDir = other_direction(task->direction);
     cond_signal(&PrioWaitingToGo[other_direction(task->direction)], &busLock);
-  } else if((waiters[task->direction] > 0) || prioWaiters[task->direction] > 0) // Prioritize second any task that want to go the same direction, and of them prioritize the Priority tasks first
+  } else if((waiters[task->direction] > 0) || prioWaiters[task->direction] > 0) // Prioritize third any task that want to go the same direction, and of them prioritize the Priority tasks first
   { 
     cond_signal(&PrioWaitingToGo[task->direction], &busLock);
     cond_signal(&waitingToGo[task->direction], &busLock);
