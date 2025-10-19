@@ -88,9 +88,6 @@ void init_bus (void) {
 
   random_init ((unsigned int)123456789);
 
-  /* TODO: Initialize global/static variables,
-     e.g. your condition variables, locks, counters etc */
-
   /*counter to count how many are on the bus.
     current direction of the waiters.
     curretnt priority of the waiters.
@@ -203,17 +200,6 @@ static direction_t other_direction(direction_t this_direction) {
 
 void get_slot (const task_t *task) {
 
-  /* TODO: Try to get a slot, respect the following rules:
-   *        1. There can be only BUS_CAPACITY tasks using the bus
-   *        2. The bus is half-duplex: All tasks using the bus should be either
-   * sending or receiving
-   *        3. A normal task should not get the bus if there are priority tasks
-   * waiting
-   *
-   * You do not need to guarantee fairness or freedom from starvation:
-   * feel free to schedule priority tasks of the same direction,
-   * even if there are priority tasks of the other direction waiting
-   */
 
    /*Lock before.... If the bus is full, then no one can enter. 
                      If there are tasks on the bus and the current direction is not equal to the tasks direction, then it can not enter either.  
@@ -223,7 +209,7 @@ void get_slot (const task_t *task) {
    while (
     counter == BUS_CAPACITY || // Always wait if the queue is full
     (counter > 0 && currentDir != task->direction) || // Always wait if the queue is going another direction than what you want to go
-    ( task->priority != PRIORITY  && (prioWaiters[0] != 0 || prioWaiters[1] != 0))) // Always wait if you're a normal task and there exists any kind of priority task
+    ( task->priority != PRIORITY  && (prioWaiters[SEND] != 0 || prioWaiters[RECEIVE] != 0))) // Always wait if you're a normal task and there exists any kind of priority task
   {
       if(task->priority == NORMAL){ // Normal Task
         waiters[task->direction]++;
@@ -249,11 +235,6 @@ void transfer_data (const task_t *task) {
 
 void release_slot (const task_t *task) {
 
-  /* TODO: Release the slot, think about the actions you need to perform:
-   *       - Do you need to notify any waiting task?
-   *       - Do you need to increment/decrement any counter?
-   */
-
    /*Lock before... decrement the counter (releasing a slot)
                     if there are any tasks that want to go same direction, wake them up
                     otherwise, if there are no one on the bus, and there is someone who wants to go the other direction, wake them up*/
@@ -261,6 +242,8 @@ void release_slot (const task_t *task) {
   lock_acquire(&busLock);
   counter--;
   
+  // Technically we shouldn't need if statements here and we could just broadcast notify all and get_slot() make them wait
+  // However we can prevent that by also trying to wake up the correct threads here.
   // If no one is on the bus
   if(counter == 0){
     // are any priority tasks waiting?
