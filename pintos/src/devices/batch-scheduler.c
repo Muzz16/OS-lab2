@@ -220,7 +220,6 @@ void get_slot (const task_t *task) {
                      If the task has normal priority and there are tasks waiting with higher priority, then that normal task can not enter either.
      */
    lock_acquire(&busLock);
-   //  || ( task->priority != PRIORITY  && (PrioWaiters[0] != 0 || PrioWaiters[1] != 0))
    while (
     counter == BUS_CAPACITY || // Always wait if the queue is full
     (counter > 0 && currentDir != task->direction) || // Always wait if the queue is going another direction than what you want to go
@@ -262,23 +261,34 @@ void release_slot (const task_t *task) {
   lock_acquire(&busLock);
   counter--;
   
-  if(prioWaiters[task->direction] > 0) // Prioritize first the priority tasks that are in the same direction as we 
-  {
-    cond_signal(&PrioWaitingToGo[task->direction], &busLock);
+  // If no one is on the bus
+  if(counter == 0){
+    // are any priority tasks waiting?
+    if(prioWaiters[RECEIVE] > 0 || prioWaiters[SEND] > 0){
+      // Tell the priority tasks that they can go,
+      cond_broadcast(&PrioWaitingToGo[SEND], &busLock); 
+      cond_broadcast(&PrioWaitingToGo[RECEIVE], &busLock);
+    } else { // else Let normal tasks go
+      cond_broadcast(&waitingToGo[SEND], &busLock);
+      cond_broadcast(&waitingToGo[RECEIVE], &busLock);
+    }
+
+  } else { // If there are tasks on the bus
+
+    if(prioWaiters[currentDir] > 0) // Prioritize first the priority tasks that are in the same direction as us and are priority
+    {
+      cond_signal(&PrioWaitingToGo[currentDir], &busLock);
+    } else if(prioWaiters[other_direction(currentDir)] > 0) // Prioritize second any Priority tasks that want to go the opposite direction
+    {
+      cond_signal(&PrioWaitingToGo[other_direction(currentDir)], &busLock);
+    } else if(waiters[currentDir] > 0) // Prioritize third any task that want to go the same direction, priority ones are already handled in first if statement
+    { 
+      cond_signal(&waitingToGo[currentDir], &busLock);
+    } else if((waiters[other_direction(currentDir)] > 0)){ // let other side go
+      cond_signal(&waitingToGo[other_direction(currentDir)], &busLock);
+    }
+
   }
-  else if(prioWaiters[other_direction(task->direction)] > 0) // Prioritize second any Priority tasks that want to go the opposite direction
-  {
-    currentDir = other_direction(task->direction);
-    cond_signal(&PrioWaitingToGo[other_direction(task->direction)], &busLock);
-  } else if((waiters[task->direction] > 0) || prioWaiters[task->direction] > 0) // Prioritize third any task that want to go the same direction, and of them prioritize the Priority tasks first
-  { 
-    cond_signal(&PrioWaitingToGo[task->direction], &busLock);
-    cond_signal(&waitingToGo[task->direction], &busLock);
-  }
-  else if(counter == 0) // Otherwise if there are no more tasks in the queue send a broadcast to all tasks of the opposite direction, and of course prioritize the Priority tasks first
-  {
-    cond_broadcast(&PrioWaitingToGo[other_direction(task->direction)], &busLock);
-    cond_broadcast(&waitingToGo[other_direction(task->direction)], &busLock);
-  }
+
   lock_release(&busLock);
 }
