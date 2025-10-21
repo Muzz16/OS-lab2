@@ -243,7 +243,8 @@ void release_slot (const task_t *task) {
   counter--;
   
   // Technically we shouldn't need if statements here and we could just broadcast notify all and get_slot() make them wait
-  // However we can prevent that by also trying to wake up the correct threads here.
+  // However we can prevent all threads from waking up and checking get_slot() by only signaling the correct ones
+  
   // If no one is on the bus
   if(counter == 0){
     // are any priority tasks waiting?
